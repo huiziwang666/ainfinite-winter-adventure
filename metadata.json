@@ -1,0 +1,7 @@
+{
+  "name": "AInfinite Winter Adventure",
+  "description": "A magical winter mirror that reacts to breath, gesture drawing, and creates snow interactions.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
