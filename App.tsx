@@ -4,6 +4,7 @@ import { initializeVision, processVideoFrame } from './services/visionService';
 import InfoPanel from './components/InfoPanel';
 import FogLayer from './components/FogLayer';
 import SnowSystem from './components/SnowSystem';
+import DetectionIndicator from './components/DetectionIndicator';
 import { AppState, Point } from './types';
 
 // Constants
@@ -23,7 +24,15 @@ function App() {
 
   // Visual State
   const [fogOpacity, setFogOpacity] = useState(0);
-  const [drawPoint, setDrawPoint] = useState<Point | null>(null);
+
+  // REFS for zero-latency updates (bypass React render cycle)
+  const drawPointRef = useRef<Point | null>(null);
+  const snowActiveRef = useRef(false);
+
+  // Detection State for UI display only (can have slight delay)
+  const [isMouthOpen, setIsMouthOpen] = useState(false);
+  const [isFingerDetected, setIsFingerDetected] = useState(false);
+  const [isTwoHands, setIsTwoHands] = useState(false);
 
   useEffect(() => {
     appStateRef.current = appState;
@@ -69,6 +78,7 @@ function App() {
 
   const handleVisionLoop = () => {
     const now = Date.now();
+
     if (
       webcamRef.current &&
       webcamRef.current.video &&
@@ -76,7 +86,8 @@ function App() {
       visionReady
     ) {
       const video = webcamRef.current.video;
-      const { isMouthOpen, indexFingerTip, isTwoHandsDetected } = processVideoFrame(video, now);
+      const visionResult = processVideoFrame(video, now);
+      const { isMouthOpen: mouthOpen, indexFingerTip, isTwoHandsDetected } = visionResult;
 
       // Map coordinates from Video space to Screen space
       let screenFingerTip: Point | null = null;
@@ -84,14 +95,19 @@ function App() {
         screenFingerTip = mapVideoToScreen(indexFingerTip, video);
       }
 
+      // Update detection state for UI display
+      setIsMouthOpen(mouthOpen);
+      setIsFingerDetected(!!screenFingerTip);
+      setIsTwoHands(isTwoHandsDetected);
+
       // --- State Machine Logic ---
       const currentState = appStateRef.current;
 
       // 1. CLEAR -> FOGGING
       if (currentState === AppState.CLEAR) {
-        if (isMouthOpen) {
+        if (mouthOpen) {
           if (!breathStartTimeRef.current) breathStartTimeRef.current = now;
-          
+
           if (now - breathStartTimeRef.current > BREATH_TRIGGER_DURATION) {
             setAppState(AppState.FOGGING);
             breathStartTimeRef.current = null;
@@ -111,29 +127,29 @@ function App() {
 
       // 3. DRAWING Logic
       if (currentState === AppState.DRAWING || currentState === AppState.SNOWING) {
-        
-        // Snow Trigger (Two Hands)
-        // If two hands are detected, trigger snow AND disable drawing
+
+        // Snow Trigger (Two Hands) - update ref immediately (no React delay)
+        snowActiveRef.current = isTwoHandsDetected;
         if (isTwoHandsDetected) {
            if (currentState !== AppState.SNOWING) {
                setAppState(AppState.SNOWING);
            }
            // Disable drawing while holding two hands
-           setDrawPoint(null);
+           drawPointRef.current = null;
         } else {
-           // Normal drawing if single hand/finger
-           setDrawPoint(screenFingerTip);
+           // Normal drawing if single hand/finger - update ref immediately
+           drawPointRef.current = screenFingerTip;
         }
 
         // Reset Trigger (Breath again)
-        if (isMouthOpen && (now - lastInteractionTimeRef.current > RESET_COOLDOWN)) {
+        if (mouthOpen && (now - lastInteractionTimeRef.current > RESET_COOLDOWN)) {
              if (!breathStartTimeRef.current) breathStartTimeRef.current = now;
              if (now - breathStartTimeRef.current > BREATH_TRIGGER_DURATION) {
                  setAppState(AppState.RESETTING);
                  breathStartTimeRef.current = null;
              }
         } else {
-            if (!isMouthOpen) breathStartTimeRef.current = null;
+            if (!mouthOpen) breathStartTimeRef.current = null;
         }
       }
 
@@ -188,26 +204,35 @@ function App() {
 
       {/* 1. Camera Layer */}
       <div className="absolute inset-0 z-0">
+         {/* @ts-expect-error - react-webcam types are overly strict */}
          <Webcam
           ref={webcamRef}
           audio={false}
           className="w-full h-full object-cover filter blur-[2px] brightness-110 contrast-110 transform -scale-x-100"
           screenshotFormat="image/jpeg"
+          videoConstraints={{ width: 640, height: 480 }}
         />
       </div>
 
       {/* 2. Fog Layer (Canvas) */}
-      <FogLayer 
-        opacity={fogOpacity} 
-        drawPoint={drawPoint} 
+      <FogLayer
+        opacity={fogOpacity}
+        drawPointRef={drawPointRef}
         isResetting={appState === AppState.RESETTING}
       />
 
       {/* 3. Snow Layer */}
-      <SnowSystem active={appState === AppState.SNOWING} />
+      <SnowSystem activeRef={snowActiveRef} />
 
       {/* 4. UI Layer */}
       <InfoPanel />
+
+      {/* 5. Detection Indicator for kids */}
+      <DetectionIndicator
+        isMouthOpen={isMouthOpen}
+        isFingerDetected={isFingerDetected}
+        isTwoHands={isTwoHands}
+      />
 
       {/* Loading State */}
       {!visionReady && (

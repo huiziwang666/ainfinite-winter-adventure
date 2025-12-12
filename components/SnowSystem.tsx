@@ -1,10 +1,10 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, MutableRefObject } from 'react';
 
 interface SnowSystemProps {
-  active: boolean;
+  activeRef: MutableRefObject<boolean>;
 }
 
-const SnowSystem: React.FC<SnowSystemProps> = ({ active }) => {
+const SnowSystem: React.FC<SnowSystemProps> = ({ activeRef }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -31,14 +31,15 @@ const SnowSystem: React.FC<SnowSystemProps> = ({ active }) => {
     };
 
     const createParticle = () => {
-      if (!active) return;
+      // Read directly from ref for instant response
+      if (!activeRef.current) return;
       // Add new particles if active
       if (particles.length < 100) { // Limit particles for text rendering performance
         particles.push({
           x: Math.random() * canvas.width,
           y: -50,
           size: Math.random() * 40 + 20, // INCREASED: Size between 20px and 60px
-          speedY: Math.random() * 1.5 + 0.5, // Gentle fall
+          speedY: Math.random() * 4 + 3, // Fast fall
           speedX: Math.random() * 2 - 1, // Sway
           opacity: Math.random() * 0.5 + 0.4,
           rotation: Math.random() * 360
@@ -49,7 +50,8 @@ const SnowSystem: React.FC<SnowSystemProps> = ({ active }) => {
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (active) {
+      // Read from ref every frame
+      if (activeRef.current) {
         createParticle();
       }
 
@@ -88,12 +90,12 @@ const SnowSystem: React.FC<SnowSystemProps> = ({ active }) => {
       cancelAnimationFrame(animationId);
       window.removeEventListener('resize', handleResize);
     };
-  }, [active]);
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      className={`absolute inset-0 pointer-events-none z-30 transition-opacity duration-700 ${active ? 'opacity-100' : 'opacity-0'}`}
+      className="absolute inset-0 pointer-events-none z-30"
     />
   );
 };
